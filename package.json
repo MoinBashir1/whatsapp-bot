@@ -1,0 +1,32 @@
+{
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "chat": "node test.js",
+    "cron": "node src/cron.js",
+    "simulate": "node simulate.js",
+    "server": "node src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MoinBashir1/whatsapp-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MoinBashir1/whatsapp-bot/issues"
+  },
+  "homepage": "https://github.com/MoinBashir1/whatsapp-bot#readme",
+  "dependencies": {
+    "axios": "^1.17.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1",
+    "openai": "^6.42.0",
+    "pg": "^8.21.0"
+  }
+}

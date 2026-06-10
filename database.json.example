@@ -1,0 +1,14 @@
+{
+    "staging": {
+        "username": "",
+        "password": "",
+        "database": "",
+        "host": "",
+        "dialect": "postgres",
+        "logging": false,
+        "pool": {
+            "maxConnections": 10,
+            "maxIdleTime": 30000
+        }
+    }
+}
