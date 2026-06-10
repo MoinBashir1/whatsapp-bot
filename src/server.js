@@ -29,33 +29,49 @@ app.post("/webhook", async (req, res) => {
   // Always respond 200 immediately — Meta retries if it doesn't get 200 fast.
   res.sendStatus(200);
 
+  console.log("[server] POST /webhook body:", JSON.stringify(req.body, null, 2));
+
   try {
     const entry  = req.body?.entry?.[0];
     const change = entry?.changes?.[0]?.value;
 
+    console.log("[server] change:", JSON.stringify(change, null, 2));
+
     // Ignore delivery receipts and other non-message events.
-    if (!change?.messages) return;
+    if (!change?.messages) {
+      console.log("[server] No messages field — ignoring (likely a status/delivery event)");
+      return;
+    }
 
     const message     = change.messages[0];
     const phoneNumber = message.from;
     const msgType     = message.type;
+
+    console.log(`[server] Message from ${phoneNumber}, type: ${msgType}`);
 
     let userText;
 
     if (msgType === "text") {
       userText = message.text.body;
     } else if (msgType === "interactive") {
-      // User tapped a reply button — use button ID for reliable intent detection.
-      const buttonId = message.interactive?.button_reply?.id;
-      userText = buttonId === "intent_yes" ? "haan" : "nahi";
+      // Interactive reply buttons (sent by us with sendIntentButtons/sendVehicleButtons)
+      const buttonReply = message.interactive?.button_reply;
+      userText = buttonReply?.title || buttonReply?.id;
+      console.log(`[server] Interactive button — id: ${buttonReply?.id}, title: ${buttonReply?.title}`);
+    } else if (msgType === "button") {
+      // Template quick reply buttons (vahan_jobs template)
+      userText = message.button?.text || message.button?.payload;
+      console.log(`[server] Template button — text: ${message.button?.text}`);
     } else {
-      // Ignore images, audio, documents, etc. for now.
+      console.log(`[server] Unsupported message type: ${msgType} — ignoring`);
       return;
     }
 
+    console.log(`[server] Passing to processInbound: ${phoneNumber} → "${userText}"`);
     await processInbound(phoneNumber, userText);
   } catch (err) {
     console.error("[server] Error processing inbound:", err.message);
+    if (err.response?.data) console.error("[server] Meta error detail:", JSON.stringify(err.response.data));
   }
 });
 

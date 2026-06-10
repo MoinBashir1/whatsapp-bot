@@ -1,60 +1,70 @@
 "use strict";
 
 require("dotenv").config();
-const cron = require("node-cron");
 const db = require("./db");
 const { sendOpeningTemplate } = require("./whatsapp");
 
 const BATCH_SIZE = 50;
-const DELAY_MS = 500; // between messages to avoid rate limits
+const DELAY_BETWEEN_MESSAGES_MS = 500;  // between each message within a batch
+const DELAY_BETWEEN_BATCHES_MS  = 5000; // 5s pause between batches
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runBatch() {
-  console.log(`[cron] Running batch — ${new Date().toISOString()}`);
+async function run() {
+  console.log(`[cron] Starting one-time run — ${new Date().toISOString()}`);
 
   let leads;
   try {
-    leads = await db.getLeadsToPick(BATCH_SIZE);
+    leads = await db.getLeadsToPick(10000); // fetch all to_be_picked leads
   } catch (err) {
     console.error("[cron] Failed to fetch leads:", err.message);
-    return;
+    process.exit(1);
   }
 
   if (!leads.length) {
     console.log("[cron] No to_be_picked leads found.");
-    return;
+    process.exit(0);
   }
 
-  console.log(`[cron] Processing ${leads.length} leads`);
+  console.log(`[cron] ${leads.length} leads to process in batches of ${BATCH_SIZE}`);
 
-  for (const lead of leads) {
-    try {
-      // 1. Create session + mark both tables as pending in one transaction.
-      const sessionId = await db.createSessionAndMarkPending(lead);
+  let sent = 0;
+  let failed = 0;
 
-      // 2. Send hello_world template to open the conversation window.
-      // The actual cohort question is sent when user replies (in webhook.js).
-      await sendOpeningTemplate(lead.phoneNumber);
+  // Split into batches of BATCH_SIZE
+  for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+    const batch = leads.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(leads.length / BATCH_SIZE);
 
-      // 3. Save template send as first assistant message.
-      await db.appendMessage(sessionId, "assistant", "hello_world_template_sent");
+    console.log(`[cron] Batch ${batchNum}/${totalBatches} — ${batch.length} leads`);
 
-      console.log(`[cron] ✓ ${lead.phoneNumber} — session ${sessionId}`);
-    } catch (err) {
-      console.error(`[cron] ✗ ${lead.phoneNumber}:`, err.message);
+    for (const lead of batch) {
+      try {
+        const sessionId = await db.createSessionAndMarkPending(lead);
+        await sendOpeningTemplate(lead.phoneNumber);
+        await db.appendMessage(sessionId, "assistant", "vahan_jobs_template_sent");
+        sent++;
+        console.log(`[cron] ✓ (${sent}/${leads.length}) ${lead.phoneNumber}`);
+      } catch (err) {
+        failed++;
+        console.error(`[cron] ✗ ${lead.phoneNumber}:`, err.message);
+      }
+
+      await sleep(DELAY_BETWEEN_MESSAGES_MS);
     }
 
-    await sleep(DELAY_MS);
+    // Pause between batches (skip after the last one)
+    if (i + BATCH_SIZE < leads.length) {
+      console.log(`[cron] Batch ${batchNum} done. Waiting ${DELAY_BETWEEN_BATCHES_MS / 1000}s before next batch...`);
+      await sleep(DELAY_BETWEEN_BATCHES_MS);
+    }
   }
 
-  console.log("[cron] Batch done.");
+  console.log(`[cron] Done — ${sent} sent, ${failed} failed.`);
+  process.exit(0);
 }
 
-// Run immediately on start, then every 15 minutes.
-runBatch();
-cron.schedule("*/15 * * * *", runBatch);
-
-console.log("[cron] Scheduler started — runs every 15 minutes.");
+run();
